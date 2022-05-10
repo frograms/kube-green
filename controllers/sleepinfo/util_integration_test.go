@@ -9,6 +9,7 @@ import (
 	"github.com/kube-green/kube-green/controllers/internal/testutil"
 	"github.com/kube-green/kube-green/controllers/sleepinfo/cronjobs"
 	"github.com/kube-green/kube-green/controllers/sleepinfo/deployments"
+	"github.com/kube-green/kube-green/controllers/sleepinfo/rollouts"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
@@ -22,6 +23,9 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+
+	apisrollouts "github.com/argoproj/argo-rollouts/pkg/apis/rollouts"
+	rolloutsv1alpha1 "github.com/argoproj/argo-rollouts/pkg/apis/rollouts/v1alpha1"
 )
 
 type setupOptions struct {
@@ -34,6 +38,7 @@ type setupOptions struct {
 type originalResources struct {
 	deploymentList []appsv1.Deployment
 	cronjobList    []unstructured.Unstructured
+	rolloutList    []rolloutsv1alpha1.Rollout
 }
 
 func setupNamespaceWithResources(ctx context.Context, sleepInfoName, namespace string, reconciler SleepInfoReconciler, now string, opts setupOptions) (ctrl.Request, originalResources) {
@@ -49,6 +54,9 @@ func setupNamespaceWithResources(ctx context.Context, sleepInfoName, namespace s
 		By("create cronjobs")
 		originalCronJobs = upsertCronJobs(ctx, namespace, false)
 	}
+
+	By("create rollouts")
+	originalRollouts := upsertRollouts(ctx, namespace, false)
 
 	req := reconcile.Request{
 		NamespacedName: types.NamespacedName{
@@ -79,9 +87,17 @@ func setupNamespaceWithResources(ctx context.Context, sleepInfoName, namespace s
 		}
 	})
 
+	By("replicas not changed", func() {
+		rolloutsNotChanged := listDeployments(ctx, namespace)
+		for i, rollout := range rolloutsNotChanged {
+			Expect(*rollout.Spec.Replicas).To(Equal(*originalRollouts[i].Spec.Replicas))
+		}
+	})
+
 	return req, originalResources{
 		deploymentList: originalDeployments,
 		cronjobList:    originalCronJobs,
+		rolloutList:    originalRollouts,
 	}
 }
 
@@ -357,4 +373,77 @@ func getCronJobAPIVersion() string {
 	})
 	Expect(err).NotTo(HaveOccurred())
 	return restMapping.GroupVersionKind.Version
+}
+
+func upsertRollouts(ctx context.Context, namespace string, updateIfAlreadyCreated bool) []rolloutsv1alpha1.Rollout {
+	var threeReplicas int32 = 3
+	var oneReplica int32 = 1
+	var zeroReplicas int32 = 0
+	rollouts := []rolloutsv1alpha1.Rollout{
+		rollouts.GetMock(rollouts.MockSpec{
+			Name:      "service-1",
+			Namespace: namespace,
+			Replicas:  &threeReplicas,
+		}),
+		rollouts.GetMock(rollouts.MockSpec{
+			Name:      "service-2",
+			Namespace: namespace,
+			Replicas:  &oneReplica,
+		}),
+		rollouts.GetMock(rollouts.MockSpec{
+			Name:      "zero-replicas",
+			Namespace: namespace,
+			Replicas:  &zeroReplicas,
+		}),
+		rollouts.GetMock(rollouts.MockSpec{
+			Name:      "zero-replicas-annotation",
+			Namespace: namespace,
+			Replicas:  &zeroReplicas,
+			PodAnnotations: map[string]string{
+				lastScheduleKey: "2021-03-23T00:00:00.000Z",
+			},
+		}),
+	}
+	for _, rollout := range rollouts {
+		var rolloutAlreadyExists bool
+		d := rolloutsv1alpha1.Rollout{}
+		if updateIfAlreadyCreated {
+			err := k8sClient.Get(ctx, types.NamespacedName{
+				Name:      rollout.Name,
+				Namespace: namespace,
+			}, &d)
+			if err == nil {
+				rolloutAlreadyExists = true
+			}
+		}
+		if rolloutAlreadyExists {
+			patch := client.MergeFrom(&d)
+			if err := k8sClient.Patch(ctx, &rollout, patch); err != nil {
+				Expect(err).NotTo(HaveOccurred())
+			}
+		} else {
+			if err := k8sClient.Create(ctx, &rollout); err != nil {
+				Expect(err).NotTo(HaveOccurred())
+			}
+		}
+	}
+	return rollouts
+}
+
+func listRollouts(ctx context.Context, namespace string) []unstructured.Unstructured {
+	restMapping, err := k8sClient.RESTMapper().RESTMapping(schema.GroupKind{
+		Group: apisrollouts.Group,
+		Kind:  apisrollouts.RolloutKind,
+	})
+	Expect(err).NotTo(HaveOccurred())
+
+	u := unstructured.UnstructuredList{}
+	u.SetGroupVersionKind(restMapping.GroupVersionKind)
+
+	err = k8sClient.List(ctx, &u, &client.ListOptions{
+		Namespace: namespace,
+	})
+	Expect(err).NotTo(HaveOccurred())
+
+	return u.Items
 }

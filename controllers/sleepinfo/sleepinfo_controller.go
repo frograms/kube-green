@@ -26,6 +26,7 @@ const (
 	lastScheduleKey               = "scheduled-at"
 	lastOperationKey              = "operation-type"
 	replicasBeforeSleepKey        = "deployment-replicas"
+	replicasRolloutBeforeSleepKey = "rollout-replicas"
 	originalCronjobStatusKey      = "cronjobs-info"
 	replicasBeforeSleepAnnotation = "sleepinfo.kube-green.com/replicas-before-sleep"
 
@@ -63,6 +64,7 @@ var sleepDelta int64 = 60
 //+kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=core,resources=secrets,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=batch,resources=cronjobs,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=argoproj.io/v1alpha1,resources=rollouts,verbs=get;list;watch;create;update;patch;delete
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -235,6 +237,7 @@ type SleepInfoData struct {
 	LastSchedule                time.Time
 	CurrentOperationType        string
 	OriginalDeploymentsReplicas map[string]int32
+	OriginalRolloutsReplicas    map[string]int32
 	CurrentOperationSchedule    string
 	NextOperationSchedule       string
 	OriginalCronJobStatus       map[string]bool

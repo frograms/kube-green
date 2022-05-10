@@ -19,6 +19,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
+	rolloutsv1alpha1 "github.com/argoproj/argo-rollouts/pkg/apis/rollouts/v1alpha1"
 	kubegreencomv1alpha1 "github.com/kube-green/kube-green/api/v1alpha1"
 	sleepinfocontroller "github.com/kube-green/kube-green/controllers/sleepinfo"
 	// +kubebuilder:scaffold:imports
@@ -34,6 +35,7 @@ func init() {
 
 	utilruntime.Must(kubegreencomv1alpha1.AddToScheme(scheme))
 	// +kubebuilder:scaffold:scheme
+	utilruntime.Must(rolloutsv1alpha1.AddToScheme(scheme))
 }
 
 func main() {
